@@ -182,6 +182,9 @@ def run_inference(
     manual_fov: float = -1.0,
     low_vram: bool = False,
     resolution: int = -1,
+    productverse_prep: bool = False,
+    productverse_prep_margin: float = 0.12,
+    productverse_prep_mode: str = "auto",
 ):
     # Load models
     pipeline = init_pipeline(model_path, low_vram=low_vram)
@@ -189,7 +192,18 @@ def run_inference(
     # Preprocess image first — rembg loads to GPU for this call, then offloads.
     # MoGe is loaded afterwards so both never occupy VRAM at the same time.
     print(f"[Inference] Processing image: {image_path}")
-    img = Image.open(image_path)
+    with Image.open(image_path) as source_image:
+        if productverse_prep:
+            from productverse.prepare_input import prepare_product_image
+            img = prepare_product_image(
+                source_image,
+                size=1024,
+                margin=productverse_prep_margin,
+                mode=productverse_prep_mode,
+            )
+            print("[ProductVerse] Optional local product-photo framing enabled.")
+        else:
+            img = source_image.copy()
     image_preprocessed = pipeline.preprocess_image(img)
 
     # Save preprocessed image for MoGe
@@ -299,6 +313,13 @@ if __name__ == "__main__":
     parser.add_argument("--resolution", type=int, default=-1,
                         help="Pipeline resolution (1024 or 1536). Default: 1024 if --low_vram, else 1536.")
 
+    parser.add_argument("--pv_prep", action="store_true",
+                        help="Opt-in ProductVerse CPU photo framing before model preprocessing.")
+    parser.add_argument("--pv_prep_margin", type=float, default=0.12,
+                        help="Blank margin as a fraction of output (0-0.35).")
+    parser.add_argument("--pv_prep_mode", type=str, choices=["auto", "alpha", "none"],
+                        default="auto", help="Auto trim uniform borders, alpha only, or no trim.")
+
     args = parser.parse_args()
 
     run_inference(
@@ -309,4 +330,7 @@ if __name__ == "__main__":
         model_path=args.model_path,
         low_vram=args.low_vram,
         resolution=args.resolution,
+        productverse_prep=args.pv_prep,
+        productverse_prep_margin=args.pv_prep_margin,
+        productverse_prep_mode=args.pv_prep_mode,
     )
